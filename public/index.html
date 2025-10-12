@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TerraGenesis AI - Land Restoration Platform</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/leaflet.css">
+    <style>
+        :root {
+            --primary: #2e7d32;
+            --secondary: #558b2f;
+            --accent: #76ff03;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            background: linear-gradient(135deg, #f5f5f5 0%, #e8f5e9 100%);
+        }
+        
+        .dashboard {
+            display: grid;
+            grid-template-columns: 300px 1fr;
+            height: 100vh;
+        }
+        
+        .sidebar {
+            background: linear-gradient(180deg, var(--primary) 0%, #1b5e20 100%);
+            color: white;
+            padding: 20px;
+            box-shadow: 3px 0 15px rgba(0,0,0,0.2);
+        }
+        
+        .map-container {
+            position: relative;
+            height: 100%;
+        }
+        
+        #landMap {
+            height: 100%;
+            z-index: 1;
+        }
+        
+        .analysis-panel {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+            width: 350px;
+            z-index: 10;
+        }
+        
+        .satellite-layer {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: white;
+            padding: 10px;
+            border-radius: 5px;
+            z-index: 10;
+        }
+        
+        .nav .nav-item { padding: 8px 0; cursor: pointer }
+        .nav .nav-item.active { font-weight: 700 }
+    </style>
+</head>
+<body>
+    <div class="dashboard">
+        <div class="sidebar">
+            <h1>TerraGenesis AI</h1>
+            <div class="user-profile">
+                <img src="avatar.png" alt="User" width="80" style="border-radius:50%">
+                <h3>Landowner Dashboard</h3>
+            </div>
+            
+            <div class="nav">
+                <div class="nav-item active">Land Analysis</div>
+                <div class="nav-item">Regeneration Plans</div>
+                <div class="nav-item">Soil Health</div>
+                <div class="nav-item">Climate Resilience</div>
+                <div class="nav-item">AI Recommendations</div>
+            </div>
+            
+            <div class="land-stats">
+                <h3>Current Land Status</h3>
+                <p>Degradation Level: <span id="degradationLevel">Moderate</span></p>
+                <p>Soil Health Index: <span id="soilIndex">68/100</span></p>
+                <p>Recommended Actions: <span id="actionCount">4</span></p>
+            </div>
+        </div>
+        
+        <div class="map-container">
+            <div id="landMap"></div>
+            
+            <div class="satellite-layer">
+                <select id="satelliteLayer">
+                    <option value="ndvi">Vegetation Index</option>
+                    <option value="moisture">Soil Moisture</option>
+                    <option value="degradation">Degradation Risk</option>
+                </select>
+            </div>
+            
+            <div class="analysis-panel">
+                <h3>AI Analysis Report</h3>
+                <div id="reportContent">
+                    <p>Detected soil compaction in northern sector. Recommended cover cropping with legumes to improve nitrogen fixation.</p>
+                    <p>High erosion risk in southwestern slope. Suggest contour terracing and vetiver grass planting.</p>
+                </div>
+                <button id="generatePlan">Generate Regeneration Plan</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/leaflet.js"></script>
+    <script>
+        // Initialize map
+        const map = L.map('landMap').setView([-1.2921, 36.8219], 12); // Nairobi coordinates
+        
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(map);
+        
+        // Add satellite overlay layers (placeholders)
+        const ndviLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png');
+        const moistureLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png');
+        const degradationLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png');
+        
+        // Set default layer
+        ndviLayer.addTo(map);
+        
+        // Layer control
+        document.getElementById('satelliteLayer').addEventListener('change', function(e) {
+            map.removeLayer(ndviLayer);
+            map.removeLayer(moistureLayer);
+            map.removeLayer(degradationLayer);
+            
+            switch(e.target.value) {
+                case 'ndvi':
+                    ndviLayer.addTo(map);
+                    break;
+                case 'moisture':
+                    moistureLayer.addTo(map);
+                    break;
+                case 'degradation':
+                    degradationLayer.addTo(map);
+                    break;
+            }
+        });
+        
+        // Generate regeneration plan
+        document.getElementById('generatePlan').addEventListener('click', async function() {
+            try {
+                const response = await fetch('/generate-plan', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({coordinates: map.getCenter()})
+                });
+                
+                if (!response.ok) throw new Error('Server error');
+                const plan = await response.json();
+                displayPlan(plan);
+            } catch (err) {
+                alert('Could not generate plan: ' + err.message);
+            }
+        });
+        
+        function displayPlan(plan) {
+            const content = `
+                <h3>AI-Generated Regeneration Plan</h3>
+                <p><strong>Soil Restoration:</strong> ${plan.soil_strategy}</p>
+                <p><strong>Vegetation Plan:</strong> ${plan.vegetation_strategy}</p>
+                <p><strong>Water Management:</strong> ${plan.water_strategy}</p>
+                <p><strong>Timeline:</strong> ${plan.timeline}</p>
+            `;
+            document.getElementById('reportContent').innerHTML = content;
+        }
+        
+        // Simulate land degradation alerts
+        setInterval(() => {
+            fetchLandStatus();
+        }, 30000);
+        
+        async function fetchLandStatus() {
+            try {
+                const response = await fetch('/land-status');
+                if (!response.ok) throw new Error('Server error');
+                const data = await response.json();
+                updateDashboard(data);
+            } catch (err) {
+                console.warn('Could not fetch land status:', err.message);
+            }
+        }
+        
+        function updateDashboard(data) {
+            if (!data) return;
+            document.getElementById('degradationLevel').textContent = data.degradation_level || 'unknown';
+            document.getElementById('soilIndex').textContent = `${data.soil_index || 'N/A'}/100`;
+            document.getElementById('actionCount').textContent = data.action_count || 0;
+        }
+        
+        // First fetch on load
+        fetchLandStatus();
+    </script>
+</body>
+</html>

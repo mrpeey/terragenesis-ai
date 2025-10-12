@@ -1,0 +1,5 @@
+numpy
+rasterio
+gdal
+tensorflow
+scikit-learn
