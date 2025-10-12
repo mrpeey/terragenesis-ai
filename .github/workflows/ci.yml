@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          # keep a sensible default so service starts; we will use secrets in step-level shell fallback
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: terragenesis_ai
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping --silent"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          npm ci
+
+      - name: Wait for MySQL
+        env:
+          MYSQL_PWD: root
+        run: |
+          for i in {1..30}; do mysql -h127.0.0.1 -uroot -proot -e 'SELECT 1' && break || sleep 1; done
+
+      - name: Apply schema
+        run: |
+          # compute ROOT_PWD and TERR_PWD from secrets if available, otherwise use defaults
+          ROOT_PWD='${{ secrets.MYSQL_ROOT_PASSWORD }}'
+          ROOT_PWD=${ROOT_PWD:-root}
+          TERR_PWD='${{ secrets.TERR_USER_PASSWORD }}'
+          TERR_PWD=${TERR_PWD:-securepass123}
+          echo "Using ROOT_PWD=${ROOT_PWD} and TERR_PWD=${TERR_PWD}" >&2
+          # create terra_user and grant privileges, then apply schema
+          mysql -h127.0.0.1 -uroot -p${ROOT_PWD} -e "CREATE USER IF NOT EXISTS 'terra_user'@'%' IDENTIFIED BY '${TERR_PWD}'; GRANT ALL PRIVILEGES ON terragenesis_ai.* TO 'terra_user'@'%'; FLUSH PRIVILEGES;"
+          mysql -h127.0.0.1 -uroot -p${ROOT_PWD} < sql/land_management.sql
+
+      - name: Run tests
+        run: |
+          # compute TERR_PWD from secret or default
+          TERR_PWD='${{ secrets.TERR_USER_PASSWORD }}'
+          TERR_PWD=${TERR_PWD:-securepass123}
+          export DB_HOST=127.0.0.1
+          export DB_USER=terra_user
+          export DB_PASSWORD=${TERR_PWD}
+          export DB_NAME=terragenesis_ai
+          npm test

@@ -1,10 +1,26 @@
 const path = require('path');
 const express = require('express');
 const mysql = require('mysql2');
+const cors = require('cors');
+const pino = require('pino');
 require('dotenv').config();
+
+const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// CORS origin restriction (comma-separated list)
+const allowed = (process.env.ALLOWED_ORIGINS || 'http://127.0.0.1:5500,http://localhost:5500,http://localhost:3000').split(',').map(s => s.trim());
+app.use(cors({
+    origin: function(origin, cb) {
+        // allow non-browser tools (no origin) or allowed origins
+        if (!origin || allowed.indexOf(origin) !== -1) return cb(null, true);
+        const msg = `Origin ${origin} not allowed by CORS`;
+        logger.warn(msg);
+        return cb(new Error(msg), false);
+    }
+}));
 
 // Static files
 app.use(express.static(path.join(__dirname, '..', 'public')));
@@ -21,11 +37,32 @@ const db = mysql.createPool({
     queueLimit: 0
 });
 
-// Health
-app.get('/health', (req, res) => res.json({status: 'ok'}));
+// Health - perform a lightweight DB ping
+app.get('/health', async (req, res) => {
+    try {
+        await db.promise().query('SELECT 1');
+        return res.json({ status: 'ok', db: 'connected' });
+    } catch (err) {
+        logger.error({ err }, 'DB health check failed');
+        return res.status(500).json({ status: 'error', db: 'unreachable' });
+    }
+});
 
 // AI Plan Generation Endpoint (stub)
 const { spawn } = require('child_process');
+const whichPython = () => {
+    // Prefer python3, then python
+    const candidates = ['python', 'python3'];
+    for (const c of candidates) {
+        try {
+            const which = require('child_process').spawnSync(c, ['--version']);
+            if (which.status === 0) return c;
+        } catch (e) {
+            // ignore
+        }
+    }
+    return 'python';
+};
 
 app.post('/generate-plan', async (req, res) => {
     try {
@@ -36,16 +73,30 @@ app.post('/generate-plan', async (req, res) => {
         if (coordinates && coordinates.lat) args.push('--lat', String(coordinates.lat));
         if (coordinates && coordinates.lng) args.push('--lng', String(coordinates.lng));
 
-        const py = spawn('python', ['ai/ai_stub.py', ...args]);
+    const pythonExec = whichPython();
+    logger.info({ pythonExec }, 'Spawning AI subprocess');
+    const py = spawn(pythonExec, ['ai/ai_stub.py', ...args]);
         let out = '';
         let err = '';
+
         py.stdout.on('data', (data) => out += data.toString());
         py.stderr.on('data', (data) => err += data.toString());
 
-        py.on('close', async (code) => {
+        const killTimer = setTimeout(() => {
+            try { py.kill('SIGKILL'); } catch (e) {}
+            logger.warn('AI subprocess killed due to timeout');
+        }, 20000);
+
+        py.on('close', async (code, signal) => {
+            clearTimeout(killTimer);
+            if (signal === 'SIGKILL') {
+                logger.error('AI stub timed out');
+                return res.status(504).json({ error: 'ai_timeout' });
+            }
+
             if (code !== 0) {
-                console.error('AI stub error:', err);
-                return res.status(500).json({ error: 'ai_error', details: err });
+                logger.error({ code, err, out }, 'AI stub error');
+                return res.status(500).json({ error: 'ai_error', details: err || out });
             }
 
             let parsed;
@@ -64,14 +115,14 @@ app.post('/generate-plan', async (req, res) => {
                     `INSERT INTO regeneration_plans 
                     (parcel_id, creation_date, implementation_status, soil_strategy, vegetation_strategy, water_strategy, timeline_months) 
                     VALUES (?, CURDATE(), ?, ?, ?, ?, ?)`,
-                    [1, 'pending', plan['soil_strategy'], plan['vegetation_strategy'], plan['water_strategy'], 12]
+                    [1, 'pending', plan['soil_strategy'], plan['vegetation_strategy'], plan['water_strategy'], plan['timeline_months'] || 12]
                 );
             } catch (dberr) {
-                console.error('DB insert error:', dberr);
+                logger.error({ err: dberr }, 'DB insert error');
                 // continue to return plan even if DB save fails
             }
 
-            res.json(plan);
+            return res.json(plan);
         });
 
     } catch (err) {
@@ -100,11 +151,23 @@ app.get('/land-status', async (req, res) => {
             action_count: 4
         });
     } catch (err) {
-        console.error(err);
+        logger.error({ err }, 'land-status error');
         res.status(500).json({error: 'internal_error'});
     }
 });
 
-app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+// Central error handler
+app.use((err, req, res, next) => {
+    logger.error({ err }, 'Unhandled error');
+    if (res.headersSent) return next(err);
+    res.status(500).json({ error: 'internal_error' });
 });
+
+// Export app for tests
+module.exports = app;
+
+if (require.main === module) {
+    app.listen(PORT, () => {
+        logger.info(`Server running on port ${PORT}`);
+    });
+}

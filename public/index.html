@@ -116,6 +116,9 @@
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/leaflet.js"></script>
     <script>
+        // API base (when frontend served from a different origin, e.g., Live Server)
+        const API_BASE = window.API_BASE || 'http://localhost:3000';
+
         // Initialize map
         const map = L.map('landMap').setView([-1.2921, 36.8219], 12); // Nairobi coordinates
         
@@ -153,7 +156,7 @@
         // Generate regeneration plan
         document.getElementById('generatePlan').addEventListener('click', async function() {
             try {
-                const response = await fetch('/generate-plan', {
+                const response = await fetch(`${API_BASE}/generate-plan`, {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({coordinates: map.getCenter()})
@@ -168,12 +171,13 @@
         });
         
         function displayPlan(plan) {
+            const timeline = plan.timeline || (plan.timeline_months ? `${plan.timeline_months} months` : 'N/A');
             const content = `
                 <h3>AI-Generated Regeneration Plan</h3>
                 <p><strong>Soil Restoration:</strong> ${plan.soil_strategy}</p>
                 <p><strong>Vegetation Plan:</strong> ${plan.vegetation_strategy}</p>
                 <p><strong>Water Management:</strong> ${plan.water_strategy}</p>
-                <p><strong>Timeline:</strong> ${plan.timeline}</p>
+                <p><strong>Timeline:</strong> ${timeline}</p>
             `;
             document.getElementById('reportContent').innerHTML = content;
         }
@@ -185,7 +189,7 @@
         
         async function fetchLandStatus() {
             try {
-                const response = await fetch('/land-status');
+                const response = await fetch(`${API_BASE}/land-status`);
                 if (!response.ok) throw new Error('Server error');
                 const data = await response.json();
                 updateDashboard(data);
