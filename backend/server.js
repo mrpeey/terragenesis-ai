@@ -27,7 +27,7 @@ app.use(express.static(path.join(__dirname, '..', 'public')));
 app.use(express.json());
 
 // Database connection
-const db = mysql.createPool({
+let db = mysql.createPool({
     host: process.env.DB_HOST || 'localhost',
     user: process.env.DB_USER || 'terra_user',
     password: process.env.DB_PASSWORD || 'securepass123',
@@ -36,6 +36,11 @@ const db = mysql.createPool({
     connectionLimit: 10,
     queueLimit: 0
 });
+
+// Allow tests to inject a connection/pool (transactional rollback)
+function setDbForTesting(newDb) {
+    db = newDb;
+}
 
 // Health - perform a lightweight DB ping
 app.get('/health', async (req, res) => {
@@ -49,7 +54,7 @@ app.get('/health', async (req, res) => {
 });
 
 // AI Plan Generation Endpoint (stub)
-const { spawn } = require('child_process');
+const child_process = require('child_process');
 const whichPython = () => {
     // Prefer python3, then python
     const candidates = ['python', 'python3'];
@@ -75,7 +80,7 @@ app.post('/generate-plan', async (req, res) => {
 
     const pythonExec = whichPython();
     logger.info({ pythonExec }, 'Spawning AI subprocess');
-    const py = spawn(pythonExec, ['ai/ai_stub.py', ...args]);
+    const py = child_process.spawn(pythonExec, ['ai/ai_stub.py', ...args]);
         let out = '';
         let err = '';
 
@@ -163,11 +168,27 @@ app.use((err, req, res, next) => {
     res.status(500).json({ error: 'internal_error' });
 });
 
-// Export app for tests
+// Export app for tests (export app itself so Supertest can accept it)
+// and attach helper to inject a test DB
 module.exports = app;
+module.exports.setDbForTesting = setDbForTesting;
 
 if (require.main === module) {
-    app.listen(PORT, () => {
+    const server = app.listen(PORT, () => {
         logger.info(`Server running on port ${PORT}`);
     });
+
+    const shutdown = async () => {
+        logger.info('Shutting down server...');
+        try {
+            await new Promise((resolve, reject) => server.close(err => err ? reject(err) : resolve()));
+            if (db && db.end) await db.end();
+        } catch (e) {
+            logger.error({ e }, 'Error during shutdown');
+        }
+        process.exit(0);
+    };
+
+    process.on('SIGINT', shutdown);
+    process.on('SIGTERM', shutdown);
 }

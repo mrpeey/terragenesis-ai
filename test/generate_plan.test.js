@@ -3,14 +3,27 @@ const expect = require('chai').expect;
 const mysql = require('mysql2/promise');
 const sinon = require('sinon');
 const child_process = require('child_process');
-const { getMaxPlanId, cleanupPlansAfter } = require('./helpers/db_cleanup');
+const { beginTransaction, rollbackTransaction } = require('./helpers/db_cleanup');
+const { setDbForTesting } = require('../backend/server');
 
 describe('POST /generate-plan integration (stubbed AI)', function() {
   let spawnStub;
 
   beforeEach(async function() {
-    // record current max id so we can cleanup later
-    this._startMaxId = await getMaxPlanId();
+    // begin a transaction and inject connection into app so all queries use this transaction
+    this._txnConn = await beginTransaction();
+    // create a minimal pool-like wrapper that routes promise().execute/query to our transaction
+    const testDb = {
+      promise() {
+        return {
+          execute: (...args) => this._txnConn.execute(...args),
+          query: (...args) => this._txnConn.query(...args)
+        };
+      }
+    };
+    // bind this for closure
+    testDb.promise = testDb.promise.bind(this);
+    setDbForTesting(testDb);
 
     // stub child_process.spawn before requiring the app
     spawnStub = sinon.stub(child_process, 'spawn').callsFake(() => {
@@ -42,8 +55,10 @@ describe('POST /generate-plan integration (stubbed AI)', function() {
   afterEach(async function() {
     // restore stub
     if (spawnStub && spawnStub.restore) spawnStub.restore();
-    // cleanup any plans inserted during the test
-    await cleanupPlansAfter(this._startMaxId);
+    // rollback the transaction and close connection
+    if (this._txnConn) await rollbackTransaction(this._txnConn);
+    // clear injected db
+    setDbForTesting(undefined);
   });
 
   it('returns a plan and a DB row is inserted', async function() {
@@ -63,23 +78,12 @@ describe('POST /generate-plan integration (stubbed AI)', function() {
     expect(res.body).to.be.an('object');
     expect(res.body.soil_strategy).to.equal('Stubbed soil strategy');
 
-    // Query DB for the most recent regeneration_plans row
-    const db = await mysql.createConnection({
-      host: process.env.DB_HOST || 'localhost',
-      user: process.env.DB_USER || 'terra_user',
-      password: process.env.DB_PASSWORD || 'securepass123',
-      database: process.env.DB_NAME || 'terragenesis_ai'
-    });
-
-    const [rows] = await db.execute(
+    // Query DB for the most recent regeneration_plans row using our transaction connection
+    const [rows] = await this._txnConn.execute(
       `SELECT id, soil_strategy, vegetation_strategy, water_strategy
        FROM regeneration_plans
-       WHERE id > ?
-       ORDER BY id DESC LIMIT 1`,
-      [this._startMaxId]
+       ORDER BY id DESC LIMIT 1`
     );
-
-    await db.end();
 
     expect(rows).to.be.an('array').that.is.not.empty;
     const row = rows[0];

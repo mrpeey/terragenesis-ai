@@ -7,23 +7,18 @@ const config = {
   database: process.env.DB_NAME || 'terragenesis_ai'
 };
 
-async function getMaxPlanId() {
+async function beginTransaction() {
   const conn = await mysql.createConnection(config);
+  await conn.beginTransaction();
+  return conn;
+}
+
+async function rollbackTransaction(conn) {
   try {
-    const [rows] = await conn.execute('SELECT MAX(id) as maxId FROM regeneration_plans');
-    return (rows && rows[0] && rows[0].maxId) ? rows[0].maxId : 0;
+    await conn.rollback();
   } finally {
     await conn.end();
   }
 }
 
-async function cleanupPlansAfter(maxId) {
-  const conn = await mysql.createConnection(config);
-  try {
-    await conn.execute('DELETE FROM regeneration_plans WHERE id > ?', [maxId]);
-  } finally {
-    await conn.end();
-  }
-}
-
-module.exports = { getMaxPlanId, cleanupPlansAfter };
+module.exports = { beginTransaction, rollbackTransaction };
