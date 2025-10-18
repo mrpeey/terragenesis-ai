@@ -1,6 +1,6 @@
 const request = require('supertest');
 const expect = require('chai').expect;
-const mysql = require('mysql2/promise');
+// const mysql = require('mysql2/promise');
 const sinon = require('sinon');
 const child_process = require('child_process');
 const { beginTransaction, rollbackTransaction } = require('./helpers/db_cleanup');

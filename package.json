@@ -6,7 +6,10 @@
   "scripts": {
     "start": "node backend/server.js",
     "dev": "nodemon backend/server.js",
-    "test": "mocha --timeout 10000"
+    "test": "mocha --timeout 10000",
+    "lint": "eslint . --ext .js",
+    "lint:fix": "eslint . --ext .js --fix",
+    "format": "prettier --write ."
   },
   "author": "",
   "license": "MIT",
@@ -20,8 +23,14 @@
   },
   "devDependencies": {
     "chai": "^4.3.7",
+    "eslint": "^9.11.1",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-import": "^2.29.1",
+    "eslint-plugin-mocha": "^10.4.0",
+    "eslint-plugin-n": "^17.9.0",
     "mocha": "^10.2.0",
     "nodemon": "^3.1.10",
+    "prettier": "^3.3.3",
     "sinon": "^15.2.0",
     "supertest": "^6.3.3"
   }

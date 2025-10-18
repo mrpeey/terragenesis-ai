@@ -6,6 +6,7 @@ const pino = require('pino');
 require('dotenv').config();
 
 const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
+const HTTP = require('./httpErrors');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -49,7 +50,8 @@ app.get('/health', async (req, res) => {
         return res.json({ status: 'ok', db: 'connected' });
     } catch (err) {
         logger.error({ err }, 'DB health check failed');
-        return res.status(500).json({ status: 'error', db: 'unreachable' });
+        // Service temporarily unavailable (DB down/unreachable)
+        return res.status(HTTP.status.SERVICE_UNAVAILABLE).json({ status: 'error', db: 'unreachable' });
     }
 });
 
@@ -62,7 +64,7 @@ const whichPython = () => {
         try {
             const which = require('child_process').spawnSync(c, ['--version']);
             if (which.status === 0) return c;
-        } catch (e) {
+        } catch (_e) {
             // ignore
         }
     }
@@ -88,7 +90,7 @@ app.post('/generate-plan', async (req, res) => {
         py.stderr.on('data', (data) => err += data.toString());
 
         const killTimer = setTimeout(() => {
-            try { py.kill('SIGKILL'); } catch (e) {}
+            try { py.kill('SIGKILL'); } catch (_e) {}
             logger.warn('AI subprocess killed due to timeout');
         }, 20000);
 
@@ -96,12 +98,13 @@ app.post('/generate-plan', async (req, res) => {
             clearTimeout(killTimer);
             if (signal === 'SIGKILL') {
                 logger.error('AI stub timed out');
-                return res.status(504).json({ error: 'ai_timeout' });
+                return res.status(HTTP.status.GATEWAY_TIMEOUT).json({ error: HTTP.error.AI_TIMEOUT });
             }
 
             if (code !== 0) {
                 logger.error({ code, err, out }, 'AI stub error');
-                return res.status(500).json({ error: 'ai_error', details: err || out });
+                // Upstream AI process returned non-zero -> treat as bad gateway
+                return res.status(HTTP.status.BAD_GATEWAY).json({ error: HTTP.error.AI_ERROR, details: err || out });
             }
 
             let parsed;
@@ -109,7 +112,8 @@ app.post('/generate-plan', async (req, res) => {
                 parsed = JSON.parse(out);
             } catch (e) {
                 console.error('Malformed JSON from AI stub', e, out);
-                return res.status(500).json({ error: 'ai_malformed' });
+                // Malformed response from upstream AI -> bad gateway
+                return res.status(HTTP.status.BAD_GATEWAY).json({ error: HTTP.error.AI_MALFORMED });
             }
 
             const plan = parsed.plan || parsed;
@@ -132,7 +136,7 @@ app.post('/generate-plan', async (req, res) => {
 
     } catch (err) {
         console.error(err);
-        res.status(500).json({error: 'internal_error'});
+        res.status(HTTP.status.INTERNAL_ERROR).json({error: HTTP.error.INTERNAL});
     }
 });
 
@@ -157,15 +161,22 @@ app.get('/land-status', async (req, res) => {
         });
     } catch (err) {
         logger.error({ err }, 'land-status error');
-        res.status(500).json({error: 'internal_error'});
+        // If DB is unreachable, indicate service unavailable
+        res.status(HTTP.status.SERVICE_UNAVAILABLE).json({error: HTTP.error.INTERNAL});
     }
 });
 
 // Central error handler
-app.use((err, req, res, next) => {
+// 404 handler (must be before the error handler)
+app.use((req, res, _next) => {
+    res.status(HTTP.status.NOT_FOUND).json({ error: HTTP.error.NOT_FOUND, path: req.originalUrl });
+});
+
+// Central error handler
+app.use((err, req, res, _next) => {
     logger.error({ err }, 'Unhandled error');
-    if (res.headersSent) return next(err);
-    res.status(500).json({ error: 'internal_error' });
+    if (res.headersSent) return _next(err);
+    res.status(HTTP.status.INTERNAL_ERROR).json({ error: HTTP.error.INTERNAL });
 });
 
 // Export app for tests (export app itself so Supertest can accept it)
