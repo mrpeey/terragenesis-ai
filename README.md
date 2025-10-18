@@ -4,6 +4,12 @@
 
 TerraGenesis AI is an integrated AI-powered platform designed to combat land degradation and promote regenerative practices. Leveraging advanced machine learning, remote sensing, and data analytics, TerraGenesis AI provides actionable insights for improved soil health, optimized agricultural practices, effective reforestation strategies, and enhanced climate resilience. Our solution empowers landowners, farmers, governments, and NGOs with the tools they need to restore degraded landscapes, improve productivity, and build a more sustainable future
 
+## Quick Start
+
+1. **Setup database** (see [Database Setup Guide](docs/DATABASE_SETUP.md))
+2. **Install dependencies**: `npm install`
+3. **Run tests**: `npm test`
+4. **Start server**: `npm start` or `npm run dev`
 
 ## Testing
 

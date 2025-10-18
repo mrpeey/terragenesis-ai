@@ -1,4 +1,6 @@
-const fs = require('fs');
+git add .
+git commit -m "fix: ensure apply_schema_node.js uses root user, add DB setup docs"
+git pushconst fs = require('fs');
 const path = require('path');
 const mysql = require('mysql2/promise');
 
@@ -21,7 +23,7 @@ async function main() {
   try {
     const conn = await mysql.createConnection({
       host: process.env.DB_HOST || 'localhost',
-      user: process.env.DB_USER || 'root',
+      user: 'root', // Always use root for schema application
       password: rootPwd,
       multipleStatements: true
     });
