@@ -1,0 +1,74 @@
+{
+  "tables": {
+    "users": {
+      "columns": ["id", "name", "email", "user_type"],
+      "primaryKey": "id",
+      "foreignKeys": [],
+      "uniqueConstraints": ["email"],
+      "indexes": []
+    },
+    "land_parcels": {
+      "columns": [
+        "id",
+        "user_id",
+        "coordinates",
+        "area_hectares",
+        "soil_type",
+        "degradation_level"
+      ],
+      "primaryKey": "id",
+      "foreignKeys": [
+        {
+          "column": "user_id",
+          "referencedTable": "users",
+          "referencedColumn": "id"
+        }
+      ],
+      "uniqueConstraints": [],
+      "indexes": ["user_id"]
+    },
+    "ai_analysis": {
+      "columns": [
+        "id",
+        "parcel_id",
+        "analysis_date",
+        "ndvi_index",
+        "soil_moisture",
+        "erosion_risk",
+        "recommendations"
+      ],
+      "primaryKey": "id",
+      "foreignKeys": [
+        {
+          "column": "parcel_id",
+          "referencedTable": "land_parcels",
+          "referencedColumn": "id"
+        }
+      ],
+      "uniqueConstraints": [],
+      "indexes": ["parcel_id"]
+    },
+    "regeneration_plans": {
+      "columns": [
+        "id",
+        "parcel_id",
+        "creation_date",
+        "implementation_status",
+        "soil_strategy",
+        "vegetation_strategy",
+        "water_strategy",
+        "timeline_months"
+      ],
+      "primaryKey": "id",
+      "foreignKeys": [
+        {
+          "column": "parcel_id",
+          "referencedTable": "land_parcels",
+          "referencedColumn": "id"
+        }
+      ],
+      "uniqueConstraints": [],
+      "indexes": ["parcel_id"]
+    }
+  }
+}

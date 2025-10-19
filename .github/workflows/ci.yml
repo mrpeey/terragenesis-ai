@@ -28,6 +28,10 @@ jobs:
       DB_PASSWORD: securepass123
       DB_NAME: terragenesis_ai
       MYSQL_ROOT_PASSWORD: root
+      # Retry/backoff for DB setup scripts
+      SCHEMA_MAX_RETRIES: '15'
+      SCHEMA_RETRY_DELAY_MS: '1000'
+      SCHEMA_BACKOFF_FACTOR: '1.5'
 
     steps:
       - name: Checkout
@@ -62,7 +66,16 @@ jobs:
           MYSQL_ROOT_PASSWORD: ${{ env.MYSQL_ROOT_PASSWORD }}
           DB_HOST: ${{ env.DB_HOST }}
 
+      - name: Verify schema (tables exist)
+        run: node scripts/check_tables.js
+        env:
+          DB_HOST: ${{ env.DB_HOST }}
+          DB_USER: ${{ env.DB_USER }}
+          DB_PASSWORD: ${{ env.DB_PASSWORD }}
+          DB_NAME: ${{ env.DB_NAME }}
+          MIN_TABLES: '1'
+          EXPECT_TABLES: 'users,land_parcels,ai_analysis,regeneration_plans'
+          VALIDATE_SCHEMA: '1'
+
       - name: Run tests
         run: npm test --silent
-          export DB_NAME=terragenesis_ai
-          npm test
